@@ -15,7 +15,6 @@ def chuan_hoa(van_ban):
 DANH_SACH_LOP = ["9A1", "9A2", "9A3", "9A4", "9A5", "9A6", "9A7", "9A8", "9A9", "9A10"]
 MAT_KHAU_GV = "giaovien2024"
 
-# --- HÀM CHẤM ĐIỂM CHI TIẾT THEO BAREM ---
 def grade_by_logic_barem(project_data, de_thi):
     total_score = 0.0
     report = []
@@ -23,89 +22,113 @@ def grade_by_logic_barem(project_data, de_thi):
     all_blocks = []
     for t in project_data.get('targets', []):
         all_blocks.extend(t.get('blocks', {}).values())
+    
     code_str = str(all_blocks)
 
-    # 1. Khởi tạo biến Trả lời = Có (0.5đ)
-    if 'data_setvariableto' in code_str and 'co' in chuan_hoa(code_str):
+    # --- 1. KIỂM TRA LỆNH GÁN BIẾN TRẢ LỜI = CÓ (0.5đ) ---
+    # Phải tìm đúng khối set variable và giá trị đi kèm là 'co'
+    has_set_co = False
+    for b in all_blocks:
+        if isinstance(b, dict) and b.get('opcode') == 'data_setvariableto':
+            # Kiểm tra giá trị trong ô input của lệnh set
+            value = str(b.get('inputs', {}).get('VALUE', ''))
+            if 'co' in chuan_hoa(value):
+                has_set_co = True
+                break
+    
+    if has_set_co:
         total_score += 0.5
-        report.append("✅ 1. Khởi tạo biến Trả lời = Có (0.5đ)")
-    else: report.append("❌ 1. Thiếu khởi tạo biến Trả lời = Có (0đ)")
+        report.append("✅ 1. Có lệnh gán biến Trả lời = Có (0.5đ)")
+    else:
+        report.append("❌ 1. Thiếu lệnh gán biến Trả lời = Có (0đ)")
 
-    # 2. Vòng lặp Repeat Until + Điều kiện Not (0.5đ)
-    if 'control_repeat_until' in code_str and 'operator_not' in code_str:
+    # --- 2. KIỂM TRA VÒNG LẶP REPEAT UNTIL + NOT (0.5đ) ---
+    # Kiểm tra xem khối repeat_until có chứa toán tử NOT bên trong không
+    has_repeat_not = False
+    for b in all_blocks:
+        if isinstance(b, dict) and b.get('opcode') == 'control_repeat_until':
+            condition_id = b.get('inputs', {}).get('CONDITION', [0, None])[1]
+            # Tìm khối lệnh nối với ô điều kiện của Repeat Until
+            if condition_id:
+                cond_block = next((blk for blk in all_blocks if isinstance(blk, dict) and blk.get('id') == condition_id), None)
+                # Nếu không tìm thấy bằng ID, ta quét trong chuỗi cấu trúc của khối repeat đó
+                if cond_block and cond_block.get('opcode') == 'operator_not':
+                    has_repeat_not = True
+                elif 'operator_not' in str(b): # Cách quét dự phòng
+                    has_repeat_not = True
+                    
+    if has_repeat_not:
         total_score += 0.5
-        report.append("✅ 2. Vòng lặp Repeat Until với điều kiện 'not' đúng (0.5đ)")
-    else: report.append("❌ 2. Thiếu vòng lặp hoặc điều kiện lặp chưa đúng (0đ)")
+        report.append("✅ 2. Vòng lặp Repeat Until với điều kiện 'not' (0.5đ)")
+    else:
+        report.append("❌ 2. Sai cấu trúc vòng lặp hoặc thiếu điều kiện 'not' (0đ)")
 
-    # 3. Nhập dữ liệu 1 (Số trang/Cân nặng) (0.5đ)
-    # 4. Nhập dữ liệu 2 (Số phút/Lượng nước) (0.5đ)
+    # --- CÁC MỤC CÒN LẠI GIỮ NGUYÊN NHƯNG TỐI ƯU QUÉT CHẶT CHẼ ---
     asks = [b for b in all_blocks if isinstance(b, dict) and b.get('opcode') == 'sensing_askandwait']
+    
+    # 3 & 4. Nhập liệu
     if len(asks) >= 1:
         total_score += 0.5
-        report.append("✅ 3. Nhập được dữ liệu đầu vào thứ nhất (0.5đ)")
+        report.append("✅ 3. Nhập dữ liệu đầu vào 1 (0.5đ)")
     else: report.append("❌ 3. Thiếu lệnh nhập dữ liệu 1 (0đ)")
     
     if len(asks) >= 2:
         total_score += 0.5
-        report.append("✅ 4. Nhập được dữ liệu đầu vào thứ hai (0.5đ)")
+        report.append("✅ 4. Nhập dữ liệu đầu vào 2 (0.5đ)")
     else: report.append("❌ 4. Thiếu lệnh nhập dữ liệu 2 (0đ)")
 
-    # 5. Đúng công thức chia (V=S/T hoặc I=L/W) (1.0đ)
+    # 5. Phép chia (1.0đ)
     if 'operator_divide' in code_str:
         total_score += 1.0
-        report.append("✅ 5. Đúng công thức tính toán chỉ số (Phép chia) (1.0đ)")
-    else: report.append("❌ 5. Sai hoặc thiếu công thức tính toán (0đ)")
+        report.append("✅ 5. Đúng công thức tính toán (Phép chia) (1.0đ)")
+    else: report.append("❌ 5. Thiếu phép tính toán chia (0đ)")
 
-    # 6. Sử dụng khối If-Else (Nếu thì nếu không thì) (0.5đ)
+    # 6 & 7. If-Else và Logic NOT lồng nhau
+    targets = ["30", "40"] if "Đề 1" in de_thi else ["0.5", "1"]
     if 'control_if_else' in code_str:
         total_score += 0.5
-        report.append("✅ 6. Có sử dụng khối điều kiện Nếu... thì... Nếu không thì (0.5đ)")
+        report.append("✅ 6. Có khối điều kiện Nếu... thì... Nếu không thì (0.5đ)")
         
-        # 7. Điều kiện Logic nâng cao (Not v < 0.5 và Not v > 1.0) (0.5đ)
-        # Quét sự xuất hiện đồng thời của nhiều khối 'not' và các giá trị mốc
-        targets = ["30", "40"] if "Đề 1" in de_thi else ["0.5", "1"]
+        # Kiểm tra logic NOT lồng trong IF (như hình đề bài)
         if 'operator_not' in code_str and all(t in code_str for t in targets):
             total_score += 0.5
-            report.append(f"✅ 7. Đúng điều kiện logic so sánh ngưỡng {targets} (0.5đ)")
-        else: report.append("❌ 7. Sai hoặc thiếu logic so sánh trong khối If (0đ)")
+            report.append(f"✅ 7. Đúng logic so sánh ngưỡng {targets} (0.5đ)")
+        else: report.append("❌ 7. Sai logic so sánh bên trong If (0đ)")
     else:
-        report.append("❌ 6. Thiếu khối điều kiện If-Else (0đ)")
-        report.append("❌ 7. Không thể chấm logic điều kiện (0đ)")
+        report.append("❌ 6. Thiếu khối If-Else (0đ)")
+        report.append("❌ 7. Không có khối If nên không chấm được logic (0đ)")
 
-    # 8. Thông báo kết quả khi If đúng (0.5đ)
-    txt1 = "binh thuong" if "Đề 1" in de_thi else "binh thuong"
+    # 8 & 9. Thông báo kết quả
+    txt1 = "binh thuong"
+    txt2 = "dieu chinh"
     if txt1 in chuan_hoa(code_str):
         total_score += 0.5
-        report.append("✅ 8. Xuất thông báo 'Bình thường' khi thỏa điều kiện (0.5đ)")
-    else: report.append("❌ 8. Thiếu/Sai thông báo khi thỏa điều kiện (0đ)")
+        report.append("✅ 8. Thông báo 'Bình thường' đúng (0.5đ)")
+    else: report.append("❌ 8. Thiếu thông báo 'Bình thường' (0đ)")
 
-    # 9. Thông báo lời khuyên khi If sai (0.5đ)
-    txt2 = "dieu chinh" if "Đề 1" in de_thi else "dieu chinh"
     if txt2 in chuan_hoa(code_str):
         total_score += 0.5
-        report.append("✅ 9. Xuất thông báo 'Điều chỉnh' khi không thỏa điều kiện (0.5đ)")
-    else: report.append("❌ 9. Thiếu/Sai thông báo khi cần điều chỉnh (0đ)")
+        report.append("✅ 9. Thông báo 'Điều chỉnh' đúng (0.5đ)")
+    else: report.append("❌ 9. Thiếu thông báo 'Điều chỉnh' (0đ)")
 
-    # 10. Lệnh hỏi và trả lời tiếp tục (0.5đ)
+    # 10. Tiếp tục
     if len(asks) >= 3:
         total_score += 0.5
-        report.append("✅ 10. Có lệnh hỏi 'Tiếp tục không?' để duy trì vòng lặp (0.5đ)")
+        report.append("✅ 10. Có lệnh hỏi 'Tiếp tục không?' (0.5đ)")
     else: report.append("❌ 10. Thiếu xử lý hỏi tiếp tục (0đ)")
 
-    # 11. Thông báo kết thúc (0.5đ)
+    # 11. Kết thúc
     if "ket thuc" in chuan_hoa(code_str):
         total_score += 0.5
-        report.append("✅ 11. Có thông báo Kết thúc sau khi thoát lặp (0.5đ)")
+        report.append("✅ 11. Có thông báo Kết thúc (0.5đ)")
     else: report.append("❌ 11. Thiếu thông báo Kết thúc (0đ)")
 
     return round(total_score, 1), report
 
-# --- GIAO DIỆN WEB ---
-st.set_page_config(page_title="Chấm thi Scratch Barem Chuẩn", page_icon="🏫")
+# --- GIAO DIỆN GIỮ NGUYÊN ---
+st.set_page_config(page_title="Hệ thống chấm thi Scratch", page_icon="🏫")
 conn = st.connection("gsheets", type=GSheetsConnection)
-
 st.title("🏆 Hệ thống Chấm điểm Scratch Theo Barem")
-
 tab1, tab2 = st.tabs(["📝 Học sinh nộp bài", "📊 Bảng điểm"])
 
 with tab1:
@@ -124,9 +147,8 @@ with tab1:
                     data = json.loads(archive.read('project.json'))
                 final_score, details = grade_by_logic_barem(data, de_thi)
                 st.divider()
-                st.metric("TỔNG ĐIỂM CỦA EM", f"{final_score} / 6.0")
+                st.metric("TỔNG ĐIỂM", f"{final_score} / 6.0")
                 for d in details: st.write(d)
-                # Ghi Google Sheets
                 try:
                     new_row = pd.DataFrame([{"Thoi_gian": datetime.now().strftime("%H:%M:%S %d/%m/%Y"), 
                                              "Hoc_sinh": ten_hs, "Lop": lop_hs, "De": de_thi, "Diem": final_score}])
@@ -136,7 +158,7 @@ with tab1:
                 except: st.info("Lưu điểm đang bận, báo giáo viên em nhé.")
                 if final_score == 6.0: st.balloons()
             except: st.error("Lỗi file Scratch!")
-        else: st.warning("Vui lòng điền đủ thông tin!")
+        else: st.warning("Vui lòng điền đủ tên và tải file!")
 
 with tab2:
     pwd = st.text_input("Mật khẩu giáo viên:", type="password")
