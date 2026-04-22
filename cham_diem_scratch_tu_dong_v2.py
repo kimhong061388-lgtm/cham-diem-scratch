@@ -12,55 +12,37 @@ def chuan_hoa(van_ban):
     if not van_ban: return ""
     return unidecode(str(van_ban)).lower().strip()
 
-# LINK WEBHOOK CỦA BẠN
+# LINK WEBHOOK CỦA BẠN (GIỮ NGUYÊN)
 WEBHOOK_URL = "https://google.com"
 
 DANH_SACH_LOP = ["9A1", "9A2", "9A3", "9A4", "9A5", "9A6", "9A7", "9A8", "9A9", "9A10"]
 
-# --- HÀM CHẤM ĐIỂM (LOGIC KHẮT KHE) ---
 def grade_by_logic_barem(project_data, de_thi):
     total_score = 0.0
     report = []
     all_blocks = []
     for t in project_data.get('targets', []):
         all_blocks.extend(t.get('blocks', {}).values())
-    code_str = str(all_blocks).lower()
+    code_str = str(all_blocks)
     full_txt = chuan_hoa(code_str)
 
-    # 1. Gán biến Trả lời = Có
-    has_set_co = False
-    for b in all_blocks:
-        if isinstance(b, dict) and b.get('opcode') == 'data_setvariableto':
-            val_input = str(b.get('inputs', {}).get('VALUE', ''))
-            if 'co' in chuan_hoa(val_input):
-                has_set_co = True
-                break
+    has_set_co = any(isinstance(b, dict) and b.get('opcode') == 'data_setvariableto' and 'co' in chuan_hoa(str(b.get('inputs', {}).get('VALUE', ''))) for b in all_blocks)
     if has_set_co: total_score += 0.5; report.append("✅ 1. Gán biến Trả lời = Có (0.5đ)")
-    else: report.append("❌ 1. Thiếu gán biến Trả lời = Có (0đ)")
+    else: report.append("❌ 1. Thiếu lệnh gán biến (0đ)")
 
-    # 2. Vòng lặp Repeat Until + Not
-    if 'control_repeat_until' in code_str and 'operator_not' in code_str:
-        total_score += 0.5; report.append("✅ 2. Vòng lặp Repeat Until + Not (0.5đ)")
+    if 'control_repeat_until' in code_str and 'operator_not' in code_str: total_score += 0.5; report.append("✅ 2. Vòng lặp Repeat Until + Not (0.5đ)")
     else: report.append("❌ 2. Sai cấu trúc vòng lặp (0đ)")
 
-    # 3 & 4. Nhập liệu
     asks = [b for b in all_blocks if isinstance(b, dict) and b.get('opcode') == 'sensing_askandwait']
     if len(asks) >= 1: total_score += 0.5; report.append("✅ 3. Nhập dữ liệu 1 (0.5đ)")
     if len(asks) >= 2: total_score += 0.5; report.append("✅ 4. Nhập dữ liệu 2 (0.5đ)")
-
-    # 5. Phép chia
-    if 'operator_divide' in code_str:
-        total_score += 1.0; report.append("✅ 5. Đúng công thức chia (1.0đ)")
-    else: report.append("❌ 5. Thiếu phép chia (0đ)")
-
-    # 6 & 7. If-Else & Logic
+    if 'operator_divide' in code_str: total_score += 1.0; report.append("✅ 5. Đúng công thức chia (1.0đ)")
+    
     targets = ["30", "40"] if "Đề 1" in de_thi else ["0.5", "1"]
     if 'control_if_else' in code_str:
         total_score += 0.5; report.append("✅ 6. Có khối If-Else (0.5đ)")
-        if all(t in code_str for t in targets):
-            total_score += 0.5; report.append(f"✅ 7. Đúng logic ngưỡng {targets} (0.5đ)")
+        if all(t in code_str for t in targets): total_score += 0.5; report.append(f"✅ 7. Đúng logic ngưỡng {targets} (0.5đ)")
     
-    # 8 & 9. Thông báo
     if "binh thuong" in full_txt: total_score += 0.5; report.append("✅ 8. Thông báo đúng 1 (0.5đ)")
     if "dieu chinh" in full_txt or "hieu bai" in full_txt: total_score += 0.5; report.append("✅ 9. Thông báo đúng 2 (0.5đ)")
     if len(asks) >= 3: total_score += 0.5; report.append("✅ 10. Có hỏi Tiếp tục (0.5đ)")
@@ -68,7 +50,6 @@ def grade_by_logic_barem(project_data, de_thi):
 
     return round(total_score, 1), report
 
-# --- GIAO DIỆN ---
 st.set_page_config(page_title="Thi Scratch", page_icon="🏆")
 st.title("🏆 Hệ thống Chấm điểm Scratch V2")
 
@@ -80,43 +61,24 @@ file_sb3 = st.file_uploader("Tải file bài làm của em (.sb3)", type="sb3")
 if st.button("NỘP BÀI VÀ XEM ĐIỂM"):
     if ten_hs and file_sb3:
         try:
-            file_bytes = file_sb3.read()
-            with zipfile.ZipFile(io.BytesIO(file_bytes), 'r') as archive:
+            with zipfile.ZipFile(io.BytesIO(file_sb3.read()), 'r') as archive:
                 data = json.loads(archive.read('project.json'))
-            
             score, details = grade_by_logic_barem(data, de_thi)
-            
             st.divider()
-            
-            # HIỂN THỊ KHUNG THÔNG BÁO TO (GIỐNG BẢN CŨ BẠN ƯNG Ý)
             st.success(f"### CHÚC MỪNG: {ten_hs.upper()}")
             st.info(f"### LỚP: {lop_hs} --- ĐIỂM: {score} / 6.0")
 
-            # --- LƯU ĐIỂM TỰ ĐỘNG ---
+            # GỬI ĐIỂM
             try:
-                payload = {
-                    "Thoi_gian": datetime.now().strftime("%H:%M:%S %d/%m/%Y"),
-                    "Hoc_sinh": ten_hs, 
-                    "Lop": lop_hs, 
-                    "De": de_thi, 
-                    "Diem": score
-                }
-                requests.post(WEBHOOK_URL, json=payload, timeout=10)
-                st.success("✅ Hệ thống đã ghi nhận điểm vào danh sách!")
+                payload = {"Thoi_gian": datetime.now().strftime("%H:%M:%S %d/%m/%Y"), "Hoc_sinh": ten_hs, "Lop": lop_hs, "De": de_thi, "Diem": score}
+                res = requests.post(WEBHOOK_URL, json=payload, timeout=10)
+                if "Success" in res.text:
+                    st.success("✅ Hệ thống đã ghi nhận điểm vào danh sách!")
+                else:
+                    st.warning("📌 Đã chấm xong! Nếu không thấy điểm trong bảng, em hãy chụp màn hình báo thầy/cô nhé.")
             except:
-                st.warning("⚠️ Mạng yếu, em hãy tải phiếu điểm bên dưới để nộp nhé.")
+                st.warning("⚠️ Mạng yếu, em hãy tải phiếu điểm bên dưới để nộp.")
 
-            # HIỂN THỊ CHI TIẾT
-            for d in details:
-                st.write(d)
-                
-            if score == 6.0: st.balloons()
-            
-            # NÚT TẢI MINH CHỨNG
-            minh_chung = f"Hoc sinh: {ten_hs}\nLop: {lop_hs}\nDiem: {score}\nDe: {de_thi}"
-            st.download_button("📥 TẢI PHIẾU ĐIỂM", minh_chung, file_name=f"Diem_{ten_hs}.txt")
-            
-        except:
-            st.error("Lỗi file: Không đọc được file .sb3 của em!")
-    else:
-        st.warning("⚠️ Vui lòng điền đủ tên và chọn file!")
+            for d in details: st.write(d)
+            st.download_button("📥 TẢI PHIẾU ĐIỂM", f"Hoc sinh: {ten_hs}\nLop: {lop_hs}\nDiem: {score}", file_name=f"Diem_{ten_hs}.txt")
+        except: st.error("Lỗi file .sb3!")
