@@ -12,28 +12,24 @@ def chuan_hoa(van_ban):
     if not van_ban: return ""
     return unidecode(str(van_ban)).lower().strip()
 
-# --- CẤU HÌNH ---
+# --- DANH SÁCH LỚP ---
 DANH_SACH_LOP = ["9A1", "9A2", "9A3", "9A4", "9A5", "9A6", "9A7", "9A8", "9A9", "9A10"]
-MAT_KHAU_GV = "giaovien2024"
 
-# Link Google Form đã được chuyển sang chế độ nhận phản hồi
-FORM_URL = "https://google.com"
-
+# --- HÀM CHẤM ĐIỂM LOGIC THEO BAREM ---
 def grade_by_logic_barem(project_data, de_thi):
     total_score = 0.0
     report = []
     all_blocks = []
     for t in project_data.get('targets', []):
         all_blocks.extend(t.get('blocks', {}).values())
-    code_str = str(all_blocks)
+    code_str = str(all_blocks).lower()
 
     # 1. Gán biến Trả lời = Có (0.5đ)
-    has_set_co = any(b.get('opcode') == 'data_setvariableto' and 'co' in chuan_hoa(str(b.get('inputs', {}).get('VALUE', ''))) for b in all_blocks if isinstance(b, dict))
-    if has_set_co: total_score += 0.5; report.append("✅ 1. Gán biến Trả lời = Có (0.5đ)")
-    else: report.append("❌ 1. Thiếu lệnh gán biến Trả lời = Có (0đ)")
+    if 'co' in code_str and 'data_setvariableto' in code_str: total_score += 0.5; report.append("✅ 1. Gán biến Trả lời = Có (0.5đ)")
+    else: report.append("❌ 1. Thiếu lệnh gán biến (0đ)")
 
-    # 2. Vòng lặp Repeat Until + Not (0.5đ)
-    if 'control_repeat_until' in code_str and 'operator_not' in code_str: total_score += 0.5; report.append("✅ 2. Vòng lặp Repeat Until + Not (0.5đ)")
+    # 2. Vòng lặp Repeat Until (0.5đ)
+    if 'control_repeat_until' in code_str: total_score += 0.5; report.append("✅ 2. Có vòng lặp Repeat Until (0.5đ)")
     else: report.append("❌ 2. Sai cấu trúc vòng lặp (0đ)")
 
     # 3 & 4. Nhập liệu (0.5đ + 0.5đ)
@@ -51,17 +47,18 @@ def grade_by_logic_barem(project_data, de_thi):
     targets = ["30", "40"] if "Đề 1" in de_thi else ["0.5", "1"]
     if 'control_if_else' in code_str:
         total_score += 0.5; report.append("✅ 6. Có khối If-Else (0.5đ)")
-        if 'operator_not' in code_str and all(t in code_str for t in targets):
+        if all(t in code_str for t in targets):
             total_score += 0.5; report.append(f"✅ 7. Đúng logic ngưỡng {targets} (0.5đ)")
         else: report.append(f"❌ 7. Sai logic ngưỡng {targets} (0đ)")
     else: report.append("❌ 6. Thiếu If-Else (0đ)"); report.append("❌ 7. Không có If (0đ)")
 
     # 8 & 9. Thông báo (0.5đ + 0.5đ)
-    txt1 = "binh thuong" if "Đề 1" in de_thi else "tap trung"
-    txt2 = "dieu chinh" if "Đề 1" in de_thi else "hieu bai tot hon"
-    if txt1 in chuan_hoa(code_str): total_score += 0.5; report.append("✅ 8. Thông báo đúng 1 (0.5đ)")
+    txt1 = "binh thuong"
+    txt2 = "dieu chinh"
+    full_text_chuan = chuan_hoa(code_str)
+    if txt1 in full_text_chuan: total_score += 0.5; report.append("✅ 8. Thông báo đúng 1 (0.5đ)")
     else: report.append("❌ 8. Sai thông báo 1 (0đ)")
-    if txt2 in chuan_hoa(code_str): total_score += 0.5; report.append("✅ 9. Thông báo đúng 2 (0.5đ)")
+    if txt2 in full_text_chuan: total_score += 0.5; report.append("✅ 9. Thông báo đúng 2 (0.5đ)")
     else: report.append("❌ 9. Sai thông báo 2 (0đ)")
 
     # 10. Tiếp tục (0.5đ)
@@ -69,47 +66,58 @@ def grade_by_logic_barem(project_data, de_thi):
     else: report.append("❌ 10. Thiếu hỏi Tiếp tục (0đ)")
 
     # 11. Kết thúc (0.5đ)
-    if "ket thuc" in chuan_hoa(code_str): total_score += 0.5; report.append("✅ 11. Có thông báo Kết thúc (0.5đ)")
+    if "ket thuc" in full_text_chuan: total_score += 0.5; report.append("✅ 11. Có thông báo Kết thúc (0.5đ)")
     else: report.append("❌ 11. Thiếu Kết thúc (0đ)")
 
     return round(total_score, 1), report
 
-# --- GIAO DIỆN ---
-st.set_page_config(page_title="Chấm thi Scratch", page_icon="🏫")
+# --- GIAO DIỆN CHÍNH ---
+st.set_page_config(page_title="Hệ thống chấm thi Scratch", page_icon="🏫")
 st.title("🏆 Hệ thống Chấm điểm Scratch Tự động")
 
 ten_hs = st.text_input("Họ và tên học sinh:")
 lop_hs = st.selectbox("Chọn lớp:", DANH_SACH_LOP)
 de_thi = st.selectbox("Chọn đề thi:", ["Đề 1: Chỉ số nước", "Đề 2: Tốc độ đọc sách"])
-file_sb3 = st.file_uploader("Tải file .sb3 của em", type="sb3")
+file_sb3 = st.file_uploader("Tải file bài làm của em (.sb3)", type="sb3")
 
-if st.button("NỘP BÀI"):
+if st.button("NỘP BÀI VÀ XEM ĐIỂM"):
     if ten_hs and file_sb3:
         try:
-            with zipfile.ZipFile(io.BytesIO(file_sb3.read()), 'r') as archive:
-                data = json.loads(archive.read('project.json'))
+            # Đọc file Scratch
+            file_bytes = file_sb3.read()
+            with zipfile.ZipFile(io.BytesIO(file_bytes), 'r') as archive:
+                project_json = archive.read('project.json')
+                data = json.loads(project_json)
+            
+            # Chấm điểm
             score, details = grade_by_logic_barem(data, de_thi)
             
             st.divider()
-            st.metric("TỔNG ĐIỂM", f"{score} / 6.0")
+            st.metric("TỔNG ĐIỂM CỦA EM", f"{score} / 6.0")
             for d in details: st.write(d)
             
-            # --- GỬI ĐIỂM LÊN GOOGLE FORM (THAY ID CÂU HỎI) ---
+            # --- GỬI ĐIỂM LÊN GOOGLE FORM ---
+            # Link formResponse dùng để gửi dữ liệu tự động
+            FORM_URL = "https://google.com"
+            
             payload = {
-                "entry.148152594": datetime.now().strftime("%H:%M:%S %d/%m/%Y"), # Thoi_gian
-                "entry.556272506": ten_hs, # Hoc_sinh
-                "entry.1685816997": lop_hs, # Lop
-                "entry.1592534571": de_thi, # De
-                "entry.443906377": score # Diem
+                "entry.1207556323": datetime.now().strftime("%H:%M:%S %d/%m/%Y"), # Thoi_gian
+                "entry.1491419959": ten_hs, # Hoc_sinh
+                "entry.102516187": lop_hs,  # Lop
+                "entry.31627165": de_thi,   # De
+                "entry.168917856": score    # Diem
             }
-            res = requests.post(FORM_URL, data=payload)
-            if res.status_code == 200:
-                st.success("Đã ghi nhận điểm thành công!")
+            
+            response = requests.post(FORM_URL, data=payload)
+            
+            if response.status_code == 200:
+                st.success("✅ Đã lưu điểm thành công vào hệ thống!")
             else:
-                st.info("Đã chấm xong! Điểm của em sẽ được giáo viên cập nhật sau nhé.")
+                st.info("💡 Điểm đã chấm xong! Em hãy báo giáo viên ghi lại điểm nhé.")
             
             if score == 6.0: st.balloons()
-        except:
-            st.error("Lỗi file bài làm!")
+            
+        except Exception as e:
+            st.error(f"❌ Lỗi file: {e}")
     else:
-        st.warning("Vui lòng điền đủ tên và chọn file!")
+        st.warning("⚠️ Vui lòng nhập tên và chọn file bài làm!")
