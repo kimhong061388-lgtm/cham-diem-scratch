@@ -5,8 +5,6 @@ import pandas as pd
 from datetime import datetime
 from unidecode import unidecode
 import io
-import urllib.parse
-import requests
 
 # --- CHUẨN HÓA ---
 def chuan_hoa(van_ban):
@@ -25,23 +23,12 @@ def grade_by_logic_barem(project_data, de_thi):
     code_str = str(all_blocks)
 
     # 1. Gán biến Trả lời = Có (0.5đ)
-    has_set_co = False
-    for b in all_blocks:
-        if isinstance(b, dict) and b.get('opcode') == 'data_setvariableto':
-            val = str(b.get('inputs', {}).get('VALUE', ''))
-            if 'co' in chuan_hoa(val):
-                has_set_co = True
-                break
+    has_set_co = any(isinstance(b, dict) and b.get('opcode') == 'data_setvariableto' and 'co' in chuan_hoa(str(b.get('inputs', {}).get('VALUE', ''))) for b in all_blocks)
     if has_set_co: total_score += 0.5; report.append("✅ 1. Gán biến Trả lời = Có (0.5đ)")
     else: report.append("❌ 1. Thiếu lệnh gán biến Trả lời = Có (0đ)")
 
     # 2. Vòng lặp Repeat Until + Not (0.5đ)
-    has_repeat_not = False
-    for b in all_blocks:
-        if isinstance(b, dict) and b.get('opcode') == 'control_repeat_until':
-            if 'operator_not' in str(b) or 'operator_not' in code_str:
-                has_repeat_not = True
-                break
+    has_repeat_not = any(isinstance(b, dict) and b.get('opcode') == 'control_repeat_until' and ('operator_not' in str(b) or 'operator_not' in code_str) for b in all_blocks)
     if has_repeat_not: total_score += 0.5; report.append("✅ 2. Vòng lặp Repeat Until + Not (0.5đ)")
     else: report.append("❌ 2. Sai cấu trúc vòng lặp (0đ)")
 
@@ -83,40 +70,37 @@ def grade_by_logic_barem(project_data, de_thi):
     return round(total_score, 1), report
 
 # --- GIAO DIỆN ---
-st.set_page_config(page_title="Thi Scratch", page_icon="🏫")
+st.set_page_config(page_title="Hệ thống chấm điểm Scratch", page_icon="🏫")
 st.title("🏆 Hệ thống Chấm điểm Scratch")
 
 ten_hs = st.text_input("Họ và tên học sinh:")
 lop_hs = st.selectbox("Chọn lớp:", DANH_SACH_LOP)
 de_thi = st.selectbox("Chọn đề thi:", ["Đề 1: Chỉ số nước", "Đề 2: Tốc độ đọc sách"])
-file_sb3 = st.file_uploader("Tải file .sb3 của em", type="sb3")
+file_sb3 = st.file_uploader("Tải file bài làm của em (.sb3)", type="sb3")
 
-if st.button("NỘP BÀI"):
+if st.button("NỘP BÀI VÀ XEM ĐIỂM"):
     if ten_hs and file_sb3:
         try:
-            with zipfile.ZipFile(io.BytesIO(file_sb3.read()), 'r') as archive:
+            file_bytes = file_sb3.read()
+            with zipfile.ZipFile(io.BytesIO(file_bytes), 'r') as archive:
                 project_json = archive.read('project.json')
                 data = json.loads(project_json)
+            
             score, details = grade_by_logic_barem(data, de_thi)
+            
             st.divider()
-            st.metric("TỔNG ĐIỂM", f"{score} / 6.0")
+            # HIỂN THỊ KẾT QUẢ CỰC LỚN ĐỂ GIÁO VIÊN DỄ NHÌN
+            st.success(f"### CHÚC MỪNG: {ten_hs.upper()}")
+            st.info(f"### LỚP: {lop_hs} --- ĐIỂM: {score} / 6.0")
+            
             for d in details: st.write(d)
-            
-            # --- PHẦN GỬI ĐIỂM ---
-            FORM_ID = "1FAIpQLSe0-1jZxmGAN1ZAh-FECB-csQuXUEIcRv2n9kLErJQP5hQM_w"
-            url = f"https://google.com{FORM_ID}/formResponse"
-            params = {
-                "entry.1207556323": datetime.now().strftime("%H:%M:%S %d/%m/%Y"),
-                "entry.1491419959": ten_hs, "entry.102516187": lop_hs,
-                "entry.31627165": de_thi, "entry.168917856": str(score),
-                "submit": "Submit"
-            }
-            
-            # Nút dự phòng nếu gửi ngầm bị chặn
-            st.warning("⚠️ Hãy nhấn nút dưới đây để XÁC NHẬN lưu điểm:")
-            full_url = f"{url}?{urllib.parse.urlencode(params)}"
-            st.link_button("NHẤN VÀO ĐÂY ĐỂ LƯU ĐIỂM", full_url)
-            
             if score == 6.0: st.balloons()
-        except: st.error("Lỗi file!")
-    else: st.warning("Vui lòng điền đủ thông tin!")
+            
+            # NÚT TẢI PHIẾU ĐIỂM DỰ PHÒNG
+            minh_chung = f"Hoc sinh: {ten_hs}\nLop: {lop_hs}\nDe: {de_thi}\nDiem: {score}\nThoi gian: {datetime.now()}"
+            st.download_button("📥 TẢI PHIẾU ĐIỂM (Minh chứng)", minh_chung, file_name=f"Diem_{ten_hs}.txt")
+
+        except Exception as e:
+            st.error(f"Lỗi file: {e}")
+    else:
+        st.warning("⚠️ Vui lòng điền đủ thông tin!")
