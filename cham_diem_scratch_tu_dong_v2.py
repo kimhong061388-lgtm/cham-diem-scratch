@@ -10,19 +10,11 @@ import requests
 # --- CẤU HÌNH GIAO DIỆN (UI) ---
 st.set_page_config(page_title="Hệ thống chấm thi Scratch", page_icon="🏆", layout="wide")
 
-# Nhúng CSS để trang trí giao diện chuyên nghiệp
+# Nhúng CSS trang trí giao diện chuyên nghiệp
 st.markdown("""
     <style>
-    /* Màu nền trang */
-    .stApp {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    }
-    /* Thanh bên trái */
-    [data-testid="stSidebar"] {
-        background-color: white;
-        border-right: 2px solid #e0e0e0;
-    }
-    /* Khung kết quả chính */
+    .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+    [data-testid="stSidebar"] { background-color: white; border-right: 2px solid #e0e0e0; }
     .result-card {
         background-color: white;
         padding: 25px;
@@ -31,7 +23,6 @@ st.markdown("""
         margin-bottom: 20px;
         border-left: 10px solid #2e7d32;
     }
-    /* Nút nộp bài */
     .stButton>button {
         width: 100%;
         border-radius: 25px;
@@ -41,12 +32,8 @@ st.markdown("""
         font-weight: bold;
         font-size: 18px;
         box-shadow: 0px 4px 10px rgba(0,0,0,0.2);
-        transition: 0.3s;
     }
-    .stButton>button:hover {
-        background-color: #1b5e20;
-        transform: scale(1.02);
-    }
+    .stButton>button:hover { background-color: #1b5e20; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,10 +49,11 @@ with st.sidebar:
     4. 🚀 **Nộp bài:** Nhấn nút màu xanh để xem điểm.
     """)
     st.warning("""
-    **Lưu ý:**
+    **Lưu ý quan trọng:**
     - Hệ thống chấm theo logic khối lệnh.
-    - Em có thể nộp lại nhiều lần để cải thiện điểm số.
-    - Sau khi nộp, hãy tải **Phiếu điểm** về làm minh chứng.
+    - **Mỗi học sinh chỉ nộp bài 01 lần duy nhất.**
+    - Em hãy kiểm tra thật kỹ bài làm trước khi nộp.
+    - Sau khi nộp, tải ngay **Phiếu điểm** về làm minh chứng.
     """)
     st.divider()
     st.write("📍 *Kỳ thi Cuối kỳ II - Khối 9*")
@@ -79,14 +67,13 @@ def chuan_hoa(van_ban):
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyLHkdz0jp-aFHjI7u-DTgHNzTy5tww8UBk65gh-r5qxDm4x-gK4vEJqs07hjWXHB0Ilg/exec"
 DANH_SACH_LOP = ["9A1", "9A2", "9A3", "9A4", "9A5", "9A6", "9A7", "9A8", "9A9", "9A10"]
 
-# --- HÀM CHẤM ĐIỂM CHI TIẾT (GIỮ NGUYÊN LOGIC CHUẨN) ---
+# --- HÀM CHẤM ĐIỂM (GIỮ NGUYÊN LOGIC KHẮT KHE) ---
 def grade_by_logic_barem(project_data, de_thi):
     total_score = 0.0
     report = []
     all_blocks = []
     for t in project_data.get('targets', []):
         all_blocks.extend(t.get('blocks', {}).values())
-    
     code_str = str(all_blocks).lower()
     full_txt = chuan_hoa(code_str)
 
@@ -116,7 +103,7 @@ def grade_by_logic_barem(project_data, de_thi):
     if 'control_if_else' in code_str: total_score += 0.5; report.append("✅ 6. Có khối lệnh If-Else (0.5đ)")
     else: report.append("❌ 6. Thiếu khối điều kiện If-Else (0đ)")
 
-    # 7. Logic ngưỡng (SỬA LỖI: Kiểm tra khắt khe mốc và toán tử logic)
+    # 7. Logic ngưỡng (Kiểm tra khắt khe)
     targets = ["30", "40"] if "Đề 1" in de_thi else ["0.5", "1"]
     has_all_targets = all(t in code_str for t in targets)
     logic_count = code_str.count('operator_lt') + code_str.count('operator_gt') + code_str.count('operator_not')
@@ -126,10 +113,10 @@ def grade_by_logic_barem(project_data, de_thi):
 
     # 8 & 9. Thông báo
     t1, t2 = ("binh thuong", "dieu chinh")
-    if t1 in full_txt: total_score += 0.5; report.append("✅ 8. Thông báo kết quả 1 đúng (0.5đ)")
-    else: report.append("❌ 8. Sai thông báo kết quả 1 (0đ)")
-    if t2 in full_txt or "hieu bai" in full_txt: total_score += 0.5; report.append("✅ 9. Thông báo kết quả 2 đúng (0.5đ)")
-    else: report.append("❌ 9. Sai thông báo kết quả 2 (0đ)")
+    if t1 in full_txt: total_score += 0.5; report.append("✅ 8. Thông báo đúng trường hợp 'Bình thường' (0.5đ)")
+    else: report.append("❌ 8. Sai thông báo trường hợp 'Bình thường' (0đ)")
+    if t2 in full_txt or "hieu bai" in full_txt: total_score += 0.5; report.append("✅ 9. Thông báo đúng trường hợp 'Điều chỉnh' (0.5đ)")
+    else: report.append("❌ 9. Sai thông báo trường hợp 'Điều chỉnh' (0đ)")
 
     # 10. Tiếp tục
     if len(asks) >= 3 or "tiep tuc" in full_txt: total_score += 0.5; report.append("✅ 10. Có hỏi Tiếp tục để duy trì lặp (0.5đ)")
@@ -143,9 +130,8 @@ def grade_by_logic_barem(project_data, de_thi):
 
 # --- GIAO DIỆN CHÍNH ---
 st.title("🏢 HỆ THỐNG CHẤM THI SCRATCH TỰ ĐỘNG")
-st.write("Trang web dành cho học sinh nộp bài và nhận kết quả trực tuyến.")
+st.write("Dành cho kỳ thi Cuối kỳ II - Học sinh thực hiện nộp bài và nhận điểm tại chỗ.")
 
-# Khu vực nhập liệu chính
 with st.container():
     c1, c2 = st.columns(2)
     with c1:
@@ -164,40 +150,35 @@ if st.button("🚀 NỘP BÀI VÀ XEM ĐIỂM NGAY"):
                 data = json.loads(archive.read('project.json'))
             score, details = grade_by_logic_barem(data, de_thi)
             
-            # Tính thời gian VN
             now_vn = datetime.now() + timedelta(hours=7)
             time_str = now_vn.strftime("%H:%M:%S %d/%m/%Y")
 
-            # HIỂN THỊ KẾT QUẢ ĐẸP MẮT
             st.markdown(f"""
                 <div class='result-card'>
                     <h2 style='text-align: center; color: #2e7d32;'>KẾT QUẢ CHẤM THI</h2>
                     <h1 style='text-align: center; font-size: 50px;'>{score} / 6.0</h1>
                     <p style='text-align: center; font-size: 18px;'>Học sinh: <b>{ten_hs.upper()}</b> | Lớp: <b>{lop_hs}</b></p>
-                    <p style='text-align: center; color: gray;'>Thời gian ghi nhận: {time_str}</p>
+                    <p style='text-align: center; color: gray;'>Ghi nhận lúc: {time_str}</p>
                 </div>
             """, unsafe_allow_html=True)
 
-            # LƯU ĐIỂM QUA WEBHOOK
             try:
                 payload = {"Thoi_gian": time_str, "Hoc_sinh": ten_hs, "Lop": lop_hs, "De": de_thi, "Diem": score}
                 requests.post(WEBHOOK_URL, json=payload, timeout=10)
-                st.success("🎉 Hệ thống đã tự động ghi điểm của em vào danh sách lớp!")
+                st.success("🎉 Hệ thống đã ghi nhận điểm của em vào danh sách thi!")
             except:
-                st.warning("⚠️ Kết nối mạng chậm, điểm chưa lưu tự động được. Em hãy tải phiếu điểm báo GV nhé.")
+                st.warning("⚠️ Kết nối mạng chậm, điểm chưa lưu tự động. Em hãy tải phiếu điểm báo ngay cho GV nhé.")
 
-            # CHI TIẾT CHẤM ĐIỂM
-            with st.expander("🔍 Xem chi tiết bảng điểm 11 mục", expanded=True):
+            with st.expander("🔍 Xem chi tiết bảng chấm điểm", expanded=True):
                 for d in details:
                     st.write(d)
                 
             if score == 6.0: st.balloons()
             
-            # NÚT TẢI MINH CHỨNG
             minh_chung = f"Hoc sinh: {ten_hs}\nLop: {lop_hs}\nDiem: {score}\nDe: {de_thi}\nThoi gian: {time_str}"
             st.download_button("📥 TẢI PHIẾU ĐIỂM MINH CHỨNG", minh_chung, file_name=f"Diem_{ten_hs}.txt")
             
         except:
             st.error("❌ Lỗi file: Không đọc được tệp bài làm. Hãy kiểm tra lại file của em!")
     else:
-        st.warning("⚠️ Em hãy nhập đầy đủ Tên và tải tệp bài làm lên nhé!")
+        st.warning("⚠️ Em hãy nhập đầy đủ thông tin và chọn bài làm trước khi nhấn Nộp bài!")
