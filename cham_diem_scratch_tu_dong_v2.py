@@ -13,7 +13,7 @@ def chuan_hoa(van_ban):
     return unidecode(str(van_ban)).lower().strip()
 
 # LINK WEBHOOK CỦA BẠN (GIỮ NGUYÊN)
-WEBHOOK_URL = "https://google.com"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyLHkdz0jp-aFHjI7u-DTgHNzTy5tww8UBk65gh-r5qxDm4x-gK4vEJqs07hjWXHB0Ilg/exec"
 
 DANH_SACH_LOP = ["9A1", "9A2", "9A3", "9A4", "9A5", "9A6", "9A7", "9A8", "9A9", "9A10"]
 
