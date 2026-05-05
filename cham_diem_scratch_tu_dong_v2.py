@@ -21,7 +21,7 @@ st.markdown("""
 with st.sidebar:
     st.image("https://flaticon.com", width=80)
     st.title("📖 HƯỚNG DẪN")
-    st.info("1. Nhập thông tin\n2. Chọn đúng Đề thi\n3. Tải file .sb3\n4. Nhấn Nộp bài")
+    st.info("1. Nhập họ và tên; chọn lớp\n2. Chọn đúng Đề thi\n3. Tải file .sb3\n4. Nhấn Nộp bài")
     st.warning("⚠️ CHỈ NỘP 01 LẦN.")
 
 def chuan_hoa(van_ban):
