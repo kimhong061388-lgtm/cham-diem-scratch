@@ -31,8 +31,13 @@ st.markdown("""
 with st.sidebar:
     st.image("https://flaticon.com", width=80)
     st.title("📖 HƯỚNG DẪN")
-    st.info("1. Nhập chính xác Họ tên, Lớp.\n2. Chọn đúng Đề thi.\n3. Tải file .sb3.\n4. Nhấn Nộp bài.")
-    st.warning("⚠️ **QUY ĐỊNH THI:**\n- Chỉ nộp bài 01 lần duy nhất.\n- Đặt tên biến đúng yêu cầu đề bài.\n- Gian lận sẽ bị phát hiện tự động.")
+    st.info("""
+    1. Nhập chính xác Họ tên, Lớp.
+    2. Chọn đúng Đề thi em đã làm.
+    3. Tải file .sb3 từ máy tính.
+    4. Nhấn nút Nộp bài để xem điểm.
+    """)
+    st.warning("⚠️ **QUY ĐỊNH:**\n- Chỉ nộp bài 01 lần duy nhất.\n- Đặt tên biến và công thức đúng yêu cầu.\n- Gian lận sẽ bị phát hiện tự động.")
     st.divider()
     st.write("📍 *Kỳ thi Cuối kỳ II - Khối 9*")
 
@@ -50,13 +55,12 @@ def grade_by_logic_barem(project_data, de_thi):
     script_desc = []
     
     all_blocks = {}
-    all_variables = {} # Lưu trữ ID biến và Tên biến thực tế
+    all_variables = {} 
     
     for t in project_data.get('targets', []):
         all_blocks.update(t.get('blocks', {}))
-        # Ánh xạ ID biến sang Tên biến (vđ: "id1" -> "L")
         for var_id, var_info in t.get('variables', {}).items():
-            all_variables[var_id] = var_info[0]
+            all_variables[var_id] = var_info[0] # Lấy tên hiển thị của biến
     
     code_str = str(all_blocks).lower()
     full_txt = chuan_hoa(code_str)
@@ -71,64 +75,59 @@ def grade_by_logic_barem(project_data, de_thi):
         total_score += 0.5; report.append("✅ 2. Vòng lặp Repeat Until + Not (0.5đ)")
     else: report.append("❌ 2. Sai cấu trúc lặp (0đ)")
 
-    # 3+4 & 5. KIỂM TRA BIẾN VÀ CÔNG THỨC CHÍNH XÁC
+    # XÁC ĐỊNH YÊU CẦU THEO ĐỀ
     is_de1 = "Đề 1" in de_thi
-    req_in1 = "l" if is_de1 else "s"
-    req_in2 = "w" if is_de1 else "t"
-    req_out = "i" if is_de1 else "v"
-    
-    found_in1 = False
-    found_in2 = False
-    formula_ok = False
-    
-    # Duyệt tìm các lệnh đặt biến
+    req_inputs = {'l', 'w'} if is_de1 else {'s', 't'}
+    req_out = 'i' if is_de1 else 'v'
+
+    # 3+4. KIỂM TRA NHẬP LIỆU (KHÔNG QUAN TRỌNG THỨ TỰ)
+    actual_inputs = set()
     for b in all_blocks.values():
         if b.get('opcode') == 'data_setvariableto':
-            var_id = b.get('fields', {}).get('VARIABLE', [None])[0]
-            var_name = chuan_hoa(all_variables.get(var_id, ""))
+            val_input = str(b.get('inputs', {}).get('VALUE', ''))
+            if 'sensing_answer' in val_input:
+                v_id = b.get('fields', {}).get('VARIABLE', [None])[0]
+                actual_inputs.add(chuan_hoa(all_variables.get(v_id, "")))
+
+    if req_inputs.issubset(actual_inputs):
+        total_score += 1.0; report.append(f"✅ 3+4. Đã nhập liệu đủ 2 biến {list(req_inputs)} (1.0đ)")
+    else:
+        report.append(f"❌ 3+4. Thiếu hoặc sai tên biến nhập liệu (Yêu cầu: {list(req_inputs)}) (0đ)")
+
+    # 5. KIỂM TRA CÔNG THỨC CHÍNH XÁC (I = L / W hoặc V = S / T)
+    formula_ok = False
+    for b in all_blocks.values():
+        if b.get('opcode') == 'data_setvariableto':
+            v_id = b.get('fields', {}).get('VARIABLE', [None])[0]
+            var_res_name = chuan_hoa(all_variables.get(v_id, ""))
             val_input = b.get('inputs', {}).get('VALUE', [])
 
-            # Kiểm tra nhập liệu (3+4)
-            if 'sensing_answer' in str(val_input):
-                if var_name == req_in1: found_in1 = True
-                if var_name == req_in2: found_in2 = True
-            
-            # Kiểm tra công thức (5)
-            if isinstance(val_input, list) and len(val_input) > 1:
-                child_id = val_input[1]
-                child_block = all_blocks.get(child_id)
+            # Nếu biến nhận kết quả đúng (I hoặc V) và nội dung gán là một phép toán
+            if var_res_name == req_out and isinstance(val_input, list) and len(val_input) > 1:
+                child_block = all_blocks.get(val_input[1])
                 if child_block and child_block.get('opcode') == 'operator_divide':
-                    # Kiểm tra tên biến kết quả
-                    if var_name == req_out:
-                        # Kiểm tra tử số và mẫu số
-                        n1_data = child_block.get('inputs', {}).get('NUM1', [])
-                        n2_data = child_block.get('inputs', {}).get('NUM2', [])
-                        
-                        # Lấy ID biến bên trong phép chia
-                        def get_var_name_from_input(data):
-                            if isinstance(data, list) and len(data) > 1:
-                                sub_block = all_blocks.get(data[1])
-                                if sub_block and sub_block.get('opcode') == 'data_variable':
-                                    v_id = sub_block.get('fields', {}).get('VARIABLE', [None])[0]
-                                    return chuan_hoa(all_variables.get(v_id, ""))
-                            return ""
+                    # Lấy tên biến ở Tử số và Mẫu số
+                    def get_vname(input_data):
+                        if isinstance(input_data, list) and len(input_data) > 1:
+                            sub = all_blocks.get(input_data[1])
+                            if sub and sub.get('opcode') == 'data_variable':
+                                vid = sub.get('fields', {}).get('VARIABLE', [None])[0]
+                                return chuan_hoa(all_variables.get(vid, ""))
+                        return ""
+                    
+                    name_num = get_vname(child_block.get('inputs', {}).get('NUM1', []))
+                    name_den = get_vname(child_block.get('inputs', {}).get('NUM2', []))
 
-                        name_n1 = get_var_name_from_input(n1_data)
-                        name_n2 = get_var_name_from_input(n2_data)
+                    # Kiểm tra đúng thứ tự: L/W (Đề 1) hoặc S/T (Đề 2)
+                    target_num = 'l' if is_de1 else 's'
+                    target_den = 'w' if is_de1 else 't'
+                    
+                    if name_num == target_num and name_den == target_den:
+                        formula_ok = True; break
 
-                        if name_n1 == req_in1 and name_n2 == req_in2:
-                            formula_ok = True
-
-    # Chấm điểm 3+4
-    if found_in1 and found_in2:
-        total_score += 1.0; report.append(f"✅ 3+4. Nhập liệu đúng biến {req_in1.upper()}, {req_in2.upper()} (1.0đ)")
-    else:
-        report.append(f"❌ 3+4. Sai tên biến nhập liệu (Yêu cầu: {req_in1.upper()}, {req_in2.upper()}) (0đ)")
-
-    # Chấm điểm 5
     if formula_ok:
-        total_score += 1.0; report.append(f"✅ 5. Đúng công thức {req_out.upper()} = {req_in1.upper()} / {req_in2.upper()} (1.0đ)")
-        script_desc.append(f"[Toán: {req_out}={req_in1}/{req_in2}]")
+        total_score += 1.0; report.append(f"✅ 5. Đúng công thức {req_out.upper()} = {target_num.upper()} / {target_den.upper()} (1.0đ)")
+        script_desc.append(f"[Toán: {req_out}={target_num}/{target_den}]")
     else:
         report.append(f"❌ 5. Sai công thức, sai tên biến hoặc sai thứ tự chia (0đ)")
         script_desc.append("[Toán: SAI]")
@@ -140,10 +139,10 @@ def grade_by_logic_barem(project_data, de_thi):
 
     # 7. Logic ngưỡng (0.5đ)
     targets = ["30", "40"] if is_de1 else ["0.5", "1"]
-    if all(t in code_str for t in targets): total_score += 0.5; report.append(f"✅ 7. Đúng ngưỡng {targets} (0.5đ)")
+    if all(t in code_str for t in targets): total_score += 0.5; report.append(f"✅ 7. Đúng ngưỡng so sánh {targets} (0.5đ)")
     else: report.append("❌ 7. Sai logic ngưỡng (0đ)")
 
-    # 8, 9, 11. Thông báo
+    # 8, 9, 11. Thông báo (Say)
     if any(k in full_txt for k in ["binh thuong", "tap trung"]): total_score += 0.5; report.append("✅ 8. Thông báo 1 OK")
     if any(k in full_txt for k in ["dieu chinh", "hieu bai"]): total_score += 0.5; report.append("✅ 9. Thông báo 2 OK")
     if "ket thuc" in full_txt: total_score += 0.5; report.append("✅ 11. Kết thúc OK")
@@ -157,12 +156,13 @@ def grade_by_logic_barem(project_data, de_thi):
 
 # --- 4. GIAO DIỆN CHÍNH ---
 st.title("🏢 HỆ THỐNG CHẤM THI SCRATCH TỰ ĐỘNG")
+
 c1, c2 = st.columns(2)
 with c1:
     ten_hs = st.text_input("👤 Họ và tên học sinh (Viết hoa có dấu):")
     lop_hs = st.selectbox("🏫 Lớp:", DANH_SACH_LOP)
 with c2:
-    de_thi = st.selectbox("📝 Đề thi:", ["Đề 1: Chỉ số nước", "Đề 2: Tốc độ đọc sách"])
+    de_thi = st.selectbox("📝 Chọn Đề thi:", ["Đề 1: Chỉ số nước", "Đề 2: Tốc độ đọc sách"])
     file_sb3 = st.file_uploader("📂 Tải tệp .sb3:", type="sb3")
 
 if st.button("🚀 NỘP BÀI VÀ XEM ĐIỂM"):
@@ -188,6 +188,8 @@ if st.button("🚀 NỘP BÀI VÀ XEM ĐIỂM"):
             except: st.warning("⚠️ Lỗi mạng, điểm chưa vào Sheets. Hãy tải phiếu điểm báo GV!")
             
             with st.expander("🔍 Chi tiết bảng chấm điểm 11 tiêu chí", expanded=True):
-                for d in details: st.write(d)
+                # Sắp xếp lại thứ tự hiển thị mục 10 trước 11
+                sorted_details = sorted(details, key=lambda x: int(x.split('.')[0].replace('✅','').replace('❌','').strip()) if '.' in x else 99)
+                for d in sorted_details: st.write(d)
         except: st.error("❌ File không hợp lệ hoặc bị lỗi cấu trúc!")
-    else: st.warning("⚠️ Vui lòng nhập đầy đủ tên và chọn file!")
+    else: st.warning("⚠️ Vui lòng điền đủ tên và tải file!")
