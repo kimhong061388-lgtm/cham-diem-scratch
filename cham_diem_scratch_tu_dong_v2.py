@@ -32,7 +32,7 @@ with st.sidebar:
     st.image("https://flaticon.com", width=80)
     st.title("📖 HƯỚNG DẪN")
     st.info("1. Nhập Họ tên, Lớp.\n2. Chọn Đề thi.\n3. Tải file .sb3.\n4. Nhấn Nộp bài.")
-    st.warning("⚠️ **QUY ĐỊNH:**\n- Chỉ nộp bài 01 lần.\n- Đặt tên biến đúng yêu cầu (L, W, I hoặc S, T, V).")
+    st.warning("⚠️ **QUY ĐỊNH:**\n- Chỉ nộp bài 01 lần.\n- Đặt tên biến đúng (L, W, I hoặc S, T, V).")
     st.divider()
     st.write("📍 *Kỳ thi Cuối kỳ II - Khối 9*")
 
@@ -40,26 +40,26 @@ def chuan_hoa(van_ban):
     if not van_ban: return ""
     return unidecode(str(van_ban)).lower().strip()
 
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbza69BFCBKFFQKg4iIwBBnFDZPviICnNIwRo36W9ADsYA1Cwx7PTt91clyXsX9JpYLg/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbza69BFCBKFFQKg4iIwBBnFDZPviICnNIwRo36W9ADsYA1Cwx7PTt91clyXsX9JpYLg/exec" # Bạn hãy dán link Webhook của bạn vào đây
+
 DANH_SACH_LOP = ["9A1", "9A2", "9A3", "9A4", "9A5", "9A6", "9A7", "9A8", "9A9", "9A10"]
 
-# --- 3. HÀM CHẤM ĐIỂM CHI TIẾT ---
+# --- 3. HÀM CHẤM ĐIỂM THÔNG MINH ---
 def grade_by_logic_barem(project_data, de_thi):
     total_score = 0.0
     report = []
     script_desc = []
     all_blocks = {}
-    all_vars = {}
+    var_map = {} # Map ID sang tên biến thực tế
 
+    # Thu thập toàn bộ biến và khối lệnh
     for t in project_data.get('targets', []):
         all_blocks.update(t.get('blocks', {}))
         for v_id, v_info in t.get('variables', {}).items():
-            all_vars[v_id] = chuan_hoa(v_info[0])
+            var_map[v_id] = chuan_hoa(v_info[0])
 
     code_str = str(all_blocks).lower()
     full_txt = chuan_hoa(code_str)
-
-    # Quy tắc đề
     is_de1 = "Đề 1" in de_thi
     req_in1, req_in2, req_out = ('l', 'w', 'i') if is_de1 else ('s', 't', 'v')
 
@@ -68,44 +68,45 @@ def grade_by_logic_barem(project_data, de_thi):
     report.append(f"{'✅' if has_co else '❌'} 1. Gán biến Trả lời = Có (0.5đ)")
     if has_co: total_score += 0.5
 
-    # 2. Repeat + Not (0.5đ)
+    # 2. Vòng lặp + Not (0.5đ)
     has_loop = 'control_repeat_until' in code_str and 'operator_not' in code_str
     report.append(f"{'✅' if has_loop else '❌'} 2. Vòng lặp Repeat Until + Not (0.5đ)")
     if has_loop: total_score += 0.5
 
-    # 3+4. Nhập liệu (1.0đ)
-    found_in = []
+    # 3+4. NHẬP LIỆU (KHẮT KHE TÊN BIẾN)
+    assigned_vars = set()
     for b in all_blocks.values():
         if b.get('opcode') == 'data_setvariableto' and 'sensing_answer' in str(b.get('inputs', {})):
             v_id = b.get('fields', {}).get('VARIABLE', [None])[0]
-            name = all_vars.get(v_id, "")
-            if name == req_in1 or name == req_in2: found_in.append(name)
-    
-    ok_in = len(set(found_in)) >= 2
+            if v_id in var_map: assigned_vars.add(var_map[v_id])
+
+    ok_in = req_in1 in assigned_vars and req_in2 in assigned_vars
     report.append(f"{'✅' if ok_in else '❌'} 3+4. Nhập đủ 2 biến {req_in1.upper()}, {req_in2.upper()} (1.0đ)")
     if ok_in: total_score += 1.0
 
-    # 5. Công thức (1.0đ)
+    # 5. CÔNG THỨC CHÍNH XÁC (Tránh lỗi gán đè và sai thứ tự)
     formula_ok = False
     for b in all_blocks.values():
         if b.get('opcode') == 'data_setvariableto':
-            v_id = b.get('fields', {}).get('VARIABLE', [None])[0]
-            if all_vars.get(v_id) == req_out:
-                val = b.get('inputs', {}).get('VALUE', [])
-                if isinstance(val, list) and len(val) > 1:
-                    child = all_blocks.get(val[1])
+            # Tìm xem biến nào nhận kết quả
+            v_res_id = b.get('fields', {}).get('VARIABLE', [None])[0]
+            if var_map.get(v_res_id) == req_out:
+                # Kiểm tra nội dung gán có phải phép chia không
+                val_input = b.get('inputs', {}).get('VALUE', [])
+                if isinstance(val_input, list) and len(val_input) > 1:
+                    child_id = val_input[1]
+                    child = all_blocks.get(child_id)
                     if child and child.get('opcode') == 'operator_divide':
-                        n1 = str(child.get('inputs', {}).get('NUM1', ''))
-                        n2 = str(child.get('inputs', {}).get('NUM2', ''))
-                        # Kiểm tra xem ID biến đầu vào có nằm trong phép chia không
-                        def check_var_in_input(input_data, target_name):
-                            if isinstance(input_data, list) and len(input_data) > 1:
-                                sub = all_blocks.get(input_data[1])
-                                if sub and all_vars.get(sub.get('fields', {}).get('VARIABLE', [None])[0]) == target_name:
-                                    return True
-                            return False
-                        if check_var_in_input(child.get('inputs', {}).get('NUM1', []), req_in1) and \
-                           check_var_in_input(child.get('inputs', {}).get('NUM2', []), req_in2):
+                        # Lấy tên biến ở Tử và Mẫu
+                        def get_name(inp):
+                            if isinstance(inp, list) and len(inp) > 1:
+                                sub = all_blocks.get(inp[1])
+                                if sub and sub.get('opcode') == 'data_variable':
+                                    return var_map.get(sub.get('fields', {}).get('VARIABLE', [None])[0])
+                            return ""
+                        n1 = get_name(child.get('inputs', {}).get('NUM1', []))
+                        n2 = get_name(child.get('inputs', {}).get('NUM2', []))
+                        if n1 == req_in1 and n2 == req_in2:
                             formula_ok = True; break
 
     report.append(f"{'✅' if formula_ok else '❌'} 5. Đúng công thức {req_out.upper()} = {req_in1.upper()} / {req_in2.upper()} (1.0đ)")
@@ -123,32 +124,19 @@ def grade_by_logic_barem(project_data, de_thi):
     report.append(f"{'✅' if has_target else '❌'} 7. Đúng ngưỡng {targets} (0.5đ)")
     if has_target: total_score += 0.5
 
-    # 8, 9. Thông báo (1.0đ)
-    ok8 = any(k in full_txt for k in ["binh thuong", "tap trung"])
-    ok9 = any(k in full_txt for k in ["dieu chinh", "hieu bai"])
-    report.append(f"{'✅' if ok8 else '❌'} 8. Thông báo 1 OK (0.5đ)")
-    report.append(f"{'✅' if ok9 else '❌'} 9. Thông báo 2 OK (0.5đ)")
-    if ok8: total_score += 0.5
-    if ok9: total_score += 0.5
-
-    # 10. Tiếp tục (0.5đ)
-    asks = [b for b in all_blocks.values() if b.get('opcode') == 'sensing_askandwait']
-    ok10 = len(asks) >= 3
-    report.append(f"{'✅' if ok10 else '❌'} 10. Có hỏi tiếp tục (0.5đ)")
-    if ok10: total_score += 0.5
-
-    # 11. Kết thúc (0.5đ)
-    ok11 = "ket thuc" in full_txt
-    report.append(f"{'✅' if ok11 else '❌'} 11. Thông báo kết thúc (0.5đ)")
-    if ok11: total_score += 0.5
+    # 8, 9, 10, 11
+    if any(k in full_txt for k in ["binh thuong", "tap trung"]): total_score += 0.5; report.append("✅ 8. Thông báo 1 OK")
+    if any(k in full_txt for k in ["dieu chinh", "hieu bai"]): total_score += 0.5; report.append("✅ 9. Thông báo 2 OK")
+    if len([b for b in all_blocks.values() if b.get('opcode') == 'sensing_askandwait']) >= 3: total_score += 0.5; report.append("✅ 10. Có hỏi tiếp tục")
+    if "ket thuc" in full_txt: total_score += 0.5; report.append("✅ 11. Kết thúc OK")
 
     return round(total_score, 1), " | ".join(script_desc), report
 
-# --- 4. GIAO DIỆN CHÍNH ---
+# --- 4. GIAO DIỆN ---
 st.title("🏢 HỆ THỐNG CHẤM THI SCRATCH TỰ ĐỘNG")
 c1, c2 = st.columns(2)
 with c1:
-    ten_hs = st.text_input("👤 Họ và tên học sinh (Viết hoa có dấu):")
+    ten_hs = st.text_input("👤 Họ và tên học sinh:")
     lop_hs = st.selectbox("🏫 Lớp:", DANH_SACH_LOP)
 with c2:
     de_thi = st.selectbox("📝 Đề thi:", ["Đề 1: Chỉ số nước", "Đề 2: Tốc độ đọc sách"])
@@ -168,9 +156,8 @@ if st.button("🚀 NỘP BÀI VÀ XEM ĐIỂM"):
             try:
                 requests.post(WEBHOOK_URL, json={"Thoi_gian": time_str, "Hoc_sinh": ten_hs, "Lop": lop_hs, "De": de_thi, "Diem": score, "Ghi_chu": summary, "Ma_dinh_danh": ma_dinh_danh}, timeout=10)
                 st.success(f"🎉 Đã lưu điểm! Mã bài: {ma_dinh_danh}")
-            except: st.warning("⚠️ Lỗi mạng, hãy tải phiếu điểm báo GV.")
-            with st.expander("🔍 Chi tiết bảng chấm điểm", expanded=True):
+            except: st.warning("⚠️ Lỗi lưu điểm, tải phiếu điểm báo GV nhé.")
+            with st.expander("🔍 Chi tiết bảng chấm điểm 11 tiêu chí", expanded=True):
                 for d in details: st.write(d)
-        except Exception as e:
-            st.error(f"❌ File không hợp lệ hoặc bị lỗi cấu trúc!")
-    else: st.warning("⚠️ Vui lòng điền đủ tên và chọn file!")
+        except: st.error("❌ File Scratch không hợp lệ!")
+    else: st.warning("Vui lòng điền đủ tên và chọn file!")
