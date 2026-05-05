@@ -24,20 +24,21 @@ with st.sidebar:
     st.image("https://flaticon.com", width=80)
     st.title("📖 HƯỚNG DẪN")
     st.info("1. Nhập Họ tên, Lớp\n2. Chọn Đề thi\n3. Tải file .sb3\n4. Nhấn Nộp bài")
-    st.warning("⚠️ CHỈ NỘP BÀI 01 LẦN DUY NHẤT.\nEm hãy kiểm tra kỹ trước khi nhấn nút.")
+    st.warning("⚠️ CHỈ NỘP BÀI 01 LẦN DUY NHẤT.")
 
 def chuan_hoa(van_ban):
     if not van_ban: return ""
     return unidecode(str(van_ban)).lower().strip()
 
-# LINK WEBHOOK (Giữ nguyên link bạn đã tạo thành công)
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyLHkdz0jp-aFHjI7u-DTgHNzTy5tww8UBk65gh-r5qxDm4x-gK4vEJqs07hjWXHB0Ilg/exec"
+# !!! THAY LINK WEBHOOK MỚI CỦA BẠN VÀO ĐÂY !!!
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzGbMWbgWnkg9IEEC9wxUPKKNOAohBuAWdmlvq3qfEVcrBqbzxlh8vnwKPQXf8WwbpyXw/exec"
+
 DANH_SACH_LOP = ["9A1", "9A2", "9A3", "9A4", "9A5", "9A6", "9A7", "9A8", "9A9", "9A10"]
 
 def grade_by_logic_barem(project_data, de_thi):
     total_score = 0.0
     report = []
-    blocks_found = [] # Để tóm tắt code gửi về Sheets
+    blocks_found = [] 
     
     all_blocks = []
     for t in project_data.get('targets', []):
@@ -45,30 +46,47 @@ def grade_by_logic_barem(project_data, de_thi):
     code_str = str(all_blocks).lower()
     full_txt = chuan_hoa(code_str)
 
-    # Chấm 11 mục và ghi nhận vào blocks_found
     # 1. Gán biến
     if 'data_setvariableto' in code_str and 'co' in full_txt:
-        total_score += 0.5; report.append("✅ 1. Gán biến (0.5đ)"); blocks_found.append("Gán biến: Có")
-    else: report.append("❌ 1. Gán biến (0đ)"); blocks_found.append("Gán biến: Không")
+        total_score += 0.5; report.append("✅ 1. Gán biến (0.5đ)"); blocks_found.append("M1:Có")
+    else: report.append("❌ 1. Gán biến (0đ)"); blocks_found.append("M1:Ko")
 
     # 2. Vòng lặp
     if 'control_repeat_until' in code_str and 'operator_not' in code_str:
-        total_score += 0.5; report.append("✅ 2. Vòng lặp (0.5đ)"); blocks_found.append("Vòng lặp: OK")
-    else: report.append("❌ 2. Vòng lặp (0đ)")
+        total_score += 0.5; report.append("✅ 2. Vòng lặp (0.5đ)"); blocks_found.append("M2:OK")
+    else: report.append("❌ 2. Vòng lặp (0đ)"); blocks_found.append("M2:Ko")
+
+    # 3 & 4. Nhập liệu
+    asks = [b for b in all_blocks if isinstance(b, dict) and b.get('opcode') == 'sensing_askandwait']
+    if len(asks) >= 1: total_score += 0.5; report.append("✅ 3. Dữ liệu 1 (0.5đ)")
+    if len(asks) >= 2: total_score += 0.5; report.append("✅ 4. Dữ liệu 2 (0.5đ)")
+    blocks_found.append(f"Hỏi:{len(asks)}")
 
     # 5. Phép chia
     if 'operator_divide' in code_str:
-        total_score += 1.0; report.append("✅ 5. Phép chia (1.0đ)"); blocks_found.append("Toán: Chia")
-    else: report.append("❌ 5. Phép chia (0đ)")
+        total_score += 1.0; report.append("✅ 5. Phép chia (1.0đ)"); blocks_found.append("Chia:OK")
+    else: report.append("❌ 5. Phép chia (0đ)"); blocks_found.append("Chia:Ko")
 
-    # (Các mục khác tương tự - tôi đã rút gọn để gửi qua Webhook cho nhanh)
-    if 'control_if_else' in code_str: total_score += 0.5; report.append("✅ 6. If-Else (0.5đ)")
-    
+    # 6. If-Else
+    if 'control_if_else' in code_str:
+        total_score += 0.5; report.append("✅ 6. If-Else (0.5đ)"); blocks_found.append("IfElse:Có")
+    else: report.append("❌ 6. If-Else (0đ)"); blocks_found.append("IfElse:Ko")
+
+    # 7. Ngưỡng
+    targets = ["30", "40"] if "Đề 1" in de_thi else ["0.5", "1"]
+    if all(t in code_str for t in targets):
+        total_score += 0.5; report.append(f"✅ 7. Ngưỡng {targets} (0.5đ)"); blocks_found.append("Ngưỡng:OK")
+    else: report.append("❌ 7. Sai ngưỡng (0đ)"); blocks_found.append("Ngưỡng:Sai")
+
+    # 11. Kết thúc
+    if "ket thuc" in full_txt: total_score += 0.5; report.append("✅ 11. Kết thúc (0.5đ)"); blocks_found.append("End:OK")
+    else: report.append("❌ 11. Kết thúc (0đ)"); blocks_found.append("End:Ko")
+
     summary = " | ".join(blocks_found)
     return round(total_score, 1), report, summary
 
 # --- GIAO DIỆN CHÍNH ---
-st.title("🏢 HỆ THỐNG CHẤM THI SCRATCH")
+st.title("🏢 HỆ THỐNG CHẤM THI SCRATCH TỰ ĐỘNG")
 c1, c2 = st.columns(2)
 with c1:
     ten_hs = st.text_input("👤 Họ và tên học sinh:")
@@ -89,20 +107,20 @@ if st.button("🚀 NỘP BÀI VÀ XEM ĐIỂM"):
 
             st.markdown(f"<div class='result-card'><h1 style='text-align:center;'>{score} / 6.0</h1><p style='text-align:center;'>Học sinh: <b>{ten_hs.upper()}</b></p></div>", unsafe_allow_html=True)
 
-            # LƯU ĐIỂM KÈM TÓM TẮT CODE
+            # LƯU ĐIỂM KÈM TÓM TẮT
             try:
                 payload = {
                     "Thoi_gian": time_str, "Hoc_sinh": ten_hs, 
                     "Lop": lop_hs, "De": de_thi, "Diem": score,
-                    "Ghi_chu": code_summary # Gửi thêm cột tóm tắt bài làm
+                    "Ghi_chu": code_summary 
                 }
                 requests.post(WEBHOOK_URL, json=payload, timeout=10)
-                st.success("🎉 Đã ghi nhận điểm thành công!")
+                st.success("🎉 Đã lưu điểm thành công!")
             except:
-                st.warning("⚠️ Lỗi lưu điểm tự động, hãy tải phiếu điểm báo GV.")
+                st.warning("⚠️ Lỗi mạng, hãy tải phiếu điểm báo GV.")
 
             with st.expander("🔍 Chi tiết chấm điểm", expanded=True):
                 for d in details: st.write(d)
-            st.download_button("📥 TẢI PHIẾU ĐIỂM", f"Hoc sinh: {ten_hs}\nLop: {lop_hs}\nDiem: {score}\nCode: {code_summary}", file_name=f"Diem_{ten_hs}.txt")
+            st.download_button("📥 TẢI PHIẾU ĐIỂM", f"Hoc sinh: {ten_hs}\nLop: {lop_hs}\nDiem: {score}\nLog: {code_summary}", file_name=f"Diem_{ten_hs}.txt")
         except: st.error("Lỗi đọc file .sb3!")
     else: st.warning("Vui lòng điền đủ tên và tải file!")
